@@ -5,8 +5,8 @@
 //Set to 1 if you want to build a version of Aurora which generates data, 2 for generating data while playing (cutechess), 0 for the normal version.
 #define DATAGEN 0
 
-#define VERSION_NUM "v1.26.5"
-#define VERSION_NAME "-choose-best-avg-val"
+#define VERSION_NUM "v1.26.6"
+#define VERSION_NAME "-spsa-ltc"
 #ifdef DEV
 #define DEV_STRING "-dev"
 #else
@@ -69,28 +69,34 @@ inline Option timeManager("timeManager", 0, 0, 3, 1);
 // 2: normal time management with nodestime
 // 3: basic time management with nodestime based on time left and increment only
 
-inline Option rootExplorationFactor("rootExplorationFactor", 0.026254, 0.001, 1024, 0, true);
-inline Option explorationFactor("explorationFactor", 0.013573, 0.001, 1024, 0, true);
-inline Option valChangedMinWeight("valChangedMinWeight", 0.13744, 0.001, 1024, 0, true);
-inline Option valSameMinWeight("valSameMinWeight", 0.012934, 0.001, 1024, 0, true);
+inline Option rootExplorationFactor("rootExplorationFactor", 0.026337, 0.001, 1024, 0, true);
+inline Option explorationFactor("explorationFactor", 0.014091, 0.001, 1024, 0, true);
+inline Option valChangedMinWeight("valChangedMinWeight", 0.123489, 0.001, 1024, 0, true);
+inline Option valSameMinWeight("valSameMinWeight", 0.007526, 0.001, 1024, 0, true);
 
-inline Option varianceScaleMultiplier("varianceScaleMultiplier", 15.262608, 0, 1024, 0, true);
-inline Option varianceScaleOffset("varianceScaleOffset", 0.006116, -1, 1, 0, true);
-inline Option varianceScaleMin("varianceScaleMin", 0.974996, 0, 1024, 0, true);
-inline Option varianceScaleMax("varianceScaleMax", 1.92726, 0, 1024, 0, true);
+inline Option varianceScaleMultiplier("varianceScaleMultiplier", 15.067323, 0, 1024, 0, true);
+inline Option varianceScaleOffset("varianceScaleOffset", 0.006641, -1, 1, 0, true);
+inline Option varianceScaleMin("varianceScaleMin", 1.001753, 0, 1024, 0, true);
+inline Option varianceScaleMax("varianceScaleMax", 1.913014, 0, 1024, 0, true);
 
-inline Option visitWindow("visitWindow", 0.037702, 0, 10, 0, true);
+inline Option visitWindow("visitWindow", 0.034869, 0, 10, 0, true);
 
-inline Option visitBoostMultiplier("visitBoostMultiplier", 1.0, 0, 10, 0, true);
-inline Option visitBoostOffset("visitBoostOffset", 0.0004, 0, 1, 0, true);
-inline Option bestMoveChangesCoefficient("bestMoveChangesCoefficient", 0.233217, 0, 1024, 0, true);
-inline Option bestMoveChangesExponent("bestMoveChangesExponent", 0.587161, 0, 16, 0, true);
-inline Option bestMoveChangesMultiplierMin("bestMoveChangesMultiplierMin", 0.241893, 0, 1024, 0, true);
-inline Option bestMoveChangesMultiplierMax("bestMoveChangesMultiplierMax", 2.053642, 0, 1024, 0, true);
+inline Option visitBoostMultiplier("visitBoostMultiplier", 1.117301, 0, 10, 0, true);
+inline Option visitBoostOffset("visitBoostOffset", 0.000528, 0, 1, 0, true);
+inline Option bestMoveChangesCoefficient("bestMoveChangesCoefficient", 0.224143, 0, 1024, 0, true);
+inline Option bestMoveChangesExponent("bestMoveChangesExponent", 0.569136, 0, 16, 0, true);
+inline Option bestMoveChangesMultiplierMin("bestMoveChangesMultiplierMin", 0.26941, 0, 1024, 0, true);
+inline Option bestMoveChangesMultiplierMax("bestMoveChangesMultiplierMax", 1.946894, 0, 1024, 0, true);
 
-inline Option timeManagementMovesLeft("timeManagementMovesLeft", 30, 1, 200, 1, true);
-inline Option timeManagementSoftFraction("timeManagementSoftFraction", 0.051142, 0, 1, 0, true);
-inline Option timeManagementHardFraction("timeManagementHardFraction", 0.095422, 0, 1, 0, true);
+inline Option timeManagementMovesLeft("timeManagementMovesLeft", 30.215695, 1, 200, 0, true);
+inline Option timeManagementSoftFraction("timeManagementSoftFraction", 0.053364, 0, 1, 0, true);
+inline Option timeManagementHardFraction("timeManagementHardFraction", 0.093877, 0, 1, 0, true);
+
+inline Option ttHashProportion("ttHashProportion", 0.196714, 0, 1, 0, true);
+
+inline Option lruPrunedVisitsEstimate("lruPrunedVisitsEstimate", 13.884551, 0, 1000, 0, true);
+
+inline Option cpMultiplier("cpMultiplier", 101.700963, 50.0, 150.0, 0, true);
 
 inline Option* getOption(const std::string& name){
   for(Option* option : options){

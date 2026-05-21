@@ -107,10 +107,10 @@ struct Tree{
   void setHash(){
     float hashMb = Aurora::hash.value;
     const int BYTES_PER_MB = 1000000;
-    sizeLimit = BYTES_PER_MB * hashMb * (Aurora::ttHash.value ? 1 : 0.8);
+    sizeLimit = BYTES_PER_MB * hashMb * (Aurora::ttHash.value ? 1 : (1-Aurora::ttHashProportion.value));
     uint32_t ttHashBytes = Aurora::ttHash.value
                               ? Aurora::ttHash.value * BYTES_PER_MB
-                              : hashMb * BYTES_PER_MB * 0.2;
+                              : hashMb * BYTES_PER_MB * Aurora::ttHashProportion.value;
     size_t targetEntries = std::max<size_t>(1, ttHashBytes / sizeof(TTEntry));
     if(TT.size() != targetEntries){
       TT.clear();
@@ -460,7 +460,7 @@ inline uint8_t selectEdge(Node* parent, Tree& tree, bool isRoot){
     float currPriority = -(currNode ? currNode->avgValue : currEdge.value) +
       ((boostTerm *
       varianceScale *
-      parentVisitsTerm) / std::sqrt(currNode ? currNode->visits : (isLRUPruned ? 14 : 1)));
+      parentVisitsTerm) / std::sqrt(currNode ? currNode->visits : (isLRUPruned ? Aurora::lruPrunedVisitsEstimate.value : 1)));
 
     assert(currPriority>=-1);
 
