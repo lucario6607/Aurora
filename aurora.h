@@ -69,6 +69,8 @@ inline Option timeManager("timeManager", 0, 0, 3, 1);
 // 2: normal time management with nodestime
 // 3: basic time management with nodestime based on time left and increment only
 
+inline Option moveOverhead("Move Overhead", 50, 0, 10000, 1);
+
 inline Option rootExplorationFactor("rootExplorationFactor", 0.026337, 0.001, 1024, 0, true);
 inline Option explorationFactor("explorationFactor", 0.014091, 0.001, 1024, 0, true);
 inline Option valChangedMinWeight("valChangedMinWeight", 0.123489, 0.001, 1024, 0, true);

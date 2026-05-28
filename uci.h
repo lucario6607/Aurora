@@ -207,7 +207,7 @@ inline void go(std::istringstream& input, chess::Board board){
     int time = 0;
     input >> time;
     search::timeManagement limit = search::timeManagement(search::TIME, 1000000000.0);
-    limit.limit = time/1000.0;
+    limit.limit = std::max(1, time - int(Aurora::moveOverhead.value))/1000.0;
     search::search(board, limit, tree); 
   }
   else{
@@ -248,16 +248,18 @@ inline void go(std::istringstream& input, chess::Board board){
       }
     } while(input >> token);
 
+    ourTime -= int(Aurora::moveOverhead.value);
+
     int movesLeft = Aurora::timeManagementMovesLeft.value;
-    int allocatedTime = std::min(
+    int allocatedTime = std::max(1, int(std::min(
       Aurora::timeManagementSoftFraction.value*(ourTime + ourInc*movesLeft),
-      float(std::max(ourTime-50, 1))
-    );
+      float(std::max(ourTime, 1))
+    )));
     tm.limit = useNodeTime ? 30000.0*allocatedTime/1000.0 : allocatedTime/1000.0;
-    allocatedTime = std::min(
+    allocatedTime = std::max(1, int(std::min(
       Aurora::timeManagementHardFraction.value*(ourTime + ourInc*movesLeft),
-      float(std::max(ourTime-50, 1))
-    );
+      float(std::max(ourTime, 1))
+    )));
     tm.hardLimit = useNodeTime ? 30000.0*allocatedTime/1000.0 : allocatedTime/1000.0;
     search::search(board, tm, tree);
   }

@@ -591,9 +591,9 @@ inline void printSearchInfo(Tree& tree, std::chrono::steady_clock::time_point st
               << std::setw(12) << "I"
               << std::setw(12) << "N"
               << std::setw(12) << "V"
-              << "PV" << std::endl;
+              << "PV" << "\n";
 
-    std::cout << std::string(80, '-') << std::endl;
+    std::cout << std::string(80, '-') << "\n";
 
     std::vector<Edge> sortedEdges;
     sortedEdges.reserve(root->children.size());
@@ -625,7 +625,7 @@ inline void printSearchInfo(Tree& tree, std::chrono::steady_clock::time_point st
             std::cout << pvEdge.edge.toStringRep() << " ";
             pvNode = tree.getNode(pvEdge.childIdx);
         }
-        std::cout << std::endl;
+        std::cout << "\n";
     }
 
     std::cout.precision(10);
@@ -651,7 +651,7 @@ inline void printSearchInfo(Tree& tree, std::chrono::steady_clock::time_point st
       std::cout << pvEdge.edge.toStringRep() << " ";
       pvNode = tree.getNode(pvEdge.childIdx);
     }
-    std::cout << std::endl;
+    std::cout << "\n";
 
     tree.previousVisits = root->visits; tree.previousElapsed = elapsed.count();
   }
@@ -684,7 +684,7 @@ inline void search(chess::Board& rootBoard, timeManagement tm, Tree& tree){
               (tree.sizeLimit == 0 ? "unlimited" : std::to_string(tree.sizeLimit/1000000.0)) << " mb "
               << "and TT size " <<
               (tree.TT.size()*sizeof(TTEntry)/1000000.0) << " mb"
-              << std::endl;
+              << "\n";
     if(tree.TT.size() == 1){
       std::cout << "info string WARNING: TT is disabled, set either TTHash or Hash option to a non-zero value to enable" << std::endl;
     }
