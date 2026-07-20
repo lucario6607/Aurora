@@ -10,7 +10,7 @@
 #include <iomanip>
 
 #if DATAGEN >= 1
-  std::string dataFolderPath = "C:/Users/kjlji/OneDrive/Documents/VSCode/C++/AuroraChessEngine-main/data";
+  std::string dataFolderPath = "C:/aurora-training/datagen-std";
 #endif
 
 namespace search{
@@ -23,14 +23,21 @@ inline void init(){
 
 struct Node;
 
+//MCTS-Solver: proven wins/losses are encoded as +/-(1 - plies*MATE_EPS),
+//so shorter mates have values closer to +/-1 and the search prefers them
+constexpr float MATE_EPS = 0.0004f;
+//A solved edge with value beyond this threshold is a proven win/loss; within it, a proven draw
+constexpr float PROVEN_THRESHOLD = 0.75f;
+
 #pragma pack(push, 1)
 struct Edge{
   uint32_t childIdx;
   float value;
   chess::Move edge;
+  uint8_t solved; //MCTS-Solver: 1 if "value" is a proven (exact) result
 
-  Edge() : childIdx(UINT32_MAX), value(-2) {}
-  Edge(chess::Move move) : childIdx(UINT32_MAX), value(-2), edge(move) {}
+  Edge() : childIdx(UINT32_MAX), value(-2), solved(0) {}
+  Edge(chess::Move move) : childIdx(UINT32_MAX), value(-2), edge(move), solved(0) {}
 };
 #pragma pack(pop)
 
@@ -51,6 +58,8 @@ struct Node{
   uint8_t index = 0;
   //For Tree Reuse
   bool mark = false;
+  //MCTS-Solver: true if this node's exact value is known (stored in avgValue and in the parent edge's value)
+  bool proven = false;
 
   Node(uint32_t parentIdx) :
     parentIdx(parentIdx),
@@ -187,7 +196,10 @@ struct Tree{
       }
       if(currTail->parentIdx != UINT32_MAX){
         //Update the 16th bit in the chess::Move to indicate that the child was pruned
-        tree[currTail->parentIdx].children[currTail->index].value = currTail->avgValue;
+        //(don't overwrite a solved edge's exact value with the average)
+        if(!tree[currTail->parentIdx].children[currTail->index].solved){
+          tree[currTail->parentIdx].children[currTail->index].value = currTail->avgValue;
+        }
         tree[currTail->parentIdx].children[currTail->index].edge.value |= 1 << 15;
         tree[currTail->parentIdx].children[currTail->index].childIdx = UINT32_MAX;
       }
@@ -312,6 +324,85 @@ inline float findBestValue(Node* parent){
   return currBestValue;
 }
 
+
+//MCTS-Solver: find the best edge among solved edges only.
+//Used to pick the bestmove when the root is proven: for a proven win the minimum solved
+//value is the fastest forced mate; for a proven draw/loss all edges are solved anyway
+inline Edge findBestProvenEdge(Node* parent){
+  float currBestValue = 2;
+  Edge currBestMove = parent->children[0];
+
+  for(int i=0; i<parent->children.size(); i++){
+    if(parent->children[i].solved && parent->children[i].value < currBestValue){
+      currBestValue = parent->children[i].value;
+      currBestMove = parent->children[i];
+    }
+  }
+
+  return currBestMove;
+}
+
+//MCTS-Solver: try to prove a node's exact value from its solved children edges.
+//A node is proven if a child is a proven loss (for the child's side to move; i.e. we have a winning move),
+//or if all children are solved (the exact value is then the negamax over them).
+//Returns true and sets outVal (from the node's side to move's perspective) if proven
+inline bool tryProve(Node* node, float& outVal){
+  if(node->children.size() == 0){return false;}
+
+  bool allSolved = true;
+  float minSolved = 2;
+  for(int i=0; i<node->children.size(); i++){
+    if(node->children[i].solved){
+      minSolved = std::min(minSolved, node->children[i].value);
+    }
+    else{
+      allSolved = false;
+    }
+  }
+
+  if(!(minSolved <= -PROVEN_THRESHOLD || allSolved)){return false;}
+
+  float v = -minSolved;
+  //Mate distance: each ply away from the terminal position moves the value one MATE_EPS toward 0,
+  //so the search prefers faster wins and slower losses
+  if(v >= PROVEN_THRESHOLD){v -= MATE_EPS;}
+  else if(v <= -PROVEN_THRESHOLD){v += MATE_EPS;}
+  outVal = std::clamp(v, -1.0f, 1.0f);
+  return true;
+}
+
+//MCTS-Solver: after backpropagation, propagate proven results up the traversed path.
+//"path" must be a copy of the traversed path taken BEFORE backpropagate() consumes it.
+//Stops at the first ancestor which cannot be proven, since nothing changed for nodes above it
+inline void proveAncestors(Tree& tree, std::vector<std::pair<Edge*, U64>>& path){
+  for(int i=int(path.size())-1; i>=0; i--){
+    Edge* edge = path[i].first;
+    Node* node = tree.getNode(edge->childIdx);
+    if(node == nullptr){return;}
+    //Already proven (e.g. a terminal node); its parent edge is already solved, so just move up
+    if(node->proven){continue;}
+
+    float exactVal;
+    if(!tryProve(node, exactVal)){return;}
+
+    node->proven = true;
+    node->avgValue = exactVal;
+    node->sumSquaredVals = exactVal*exactVal;
+    edge->solved = 1;
+    edge->value = exactVal;
+  }
+
+  //The whole path was proven, so the root might now be provable too
+  Node* root = tree.root();
+  if(!root->proven){
+    float exactVal;
+    if(tryProve(root, exactVal)){
+      root->proven = true;
+      root->avgValue = exactVal;
+      root->sumSquaredVals = exactVal*exactVal;
+    }
+  }
+}
 
 inline void destroyTree(Tree& tree){
   tree.TT.clear();
@@ -447,6 +538,10 @@ inline uint8_t selectEdge(Node* parent, Tree& tree, bool isRoot){
   // std::cout << std::clamp(1.0+32*(std::sqrt(std::max(parent->variance(), float(0)))-0.00625), 0.2, 2.0) << " ";
 
   for(int i=0; i<parent->children.size(); i++){
+    //MCTS-Solver: solved edges have nothing left to learn, so never select them.
+    //(A node with all edges solved would itself be proven and never descended into)
+    if(parent->children[i].solved){continue;}
+
     Node* currNode = tree.getNode(parent->children[i].childIdx);
     Edge currEdge = parent->children[i];
 
@@ -485,11 +580,13 @@ inline void expand(Tree& tree, Node* parent, chess::MoveList& moves){
 }
 
 template<int numHiddenNeurons>
-float playout(Tree& tree,chess::Board& board, evaluation::NNUE<numHiddenNeurons>& nnue){
+float playout(Tree& tree,chess::Board& board, evaluation::NNUE<numHiddenNeurons>& nnue, bool* isExact = nullptr){
   //First, check if position is terminal
   chess::gameStatus _gameStatus = chess::getGameStatus(board, chess::isLegalMoves(board));
   assert(-1<=_gameStatus && 2>=_gameStatus);
   if(_gameStatus != chess::ONGOING){
+    //MCTS-Solver: terminal results are exact
+    if(isExact){*isExact = true;}
     return _gameStatus;
   }
 
@@ -723,6 +820,9 @@ inline void search(chess::Board& rootBoard, timeManagement tm, Tree& tree){
   if(tbMove.value){
     chess::gameStatus result = chess::probeWdlTb(rootBoard);
     chess::MoveList moves(rootBoard);
+    //MCTS-Solver: expand() below wipes the root's edges (and their solved flags),
+    //so the root can no longer be treated as proven; the TB move is played instead
+    tree.root()->proven = false;
     expand(tree, tree.root(), moves);
     for(int i=0; i<moves.size(); i++){
       if(moves[i] == tbMove){
@@ -751,6 +851,9 @@ inline void search(chess::Board& rootBoard, timeManagement tm, Tree& tree){
           (!tm.useSoftHardNodeLimits && tree.root()->iters < tm.limit))
         )
       ){
+    //MCTS-Solver: if the root's value is proven, searching more gains nothing
+    if(tree.root()->proven){break;}
+
     chess::Board board = rootBoard;
 
     int currDepth = 0;
@@ -758,8 +861,8 @@ inline void search(chess::Board& rootBoard, timeManagement tm, Tree& tree){
     Edge* currEdge = nullptr;
     std::vector<std::pair<Edge*, U64>> traversePath;
 
-    //Traverse the search tree
-    while(currNode->children.size() > 0){
+    //Traverse the search tree (stopping at proven nodes, whose values are already exact)
+    while(currNode->children.size() > 0 && !currNode->proven){
       currDepth++;
       
       //Move all children nodes to the front of LRU
@@ -794,11 +897,17 @@ inline void search(chess::Board& rootBoard, timeManagement tm, Tree& tree){
     }
 
     //Expand & Backpropagate new values
-    if(currNode->isTerminal){
+    if(currNode->isTerminal || currNode->proven){
       tree.depth += currDepth;
       tree.root()->visits += 1;
       tree.root()->iters += 1;
+      //MCTS-Solver: a terminal node's value is exact, so it counts as proven
+      currNode->proven = true;
+      currNode->avgValue = currEdge->value;
+      currEdge->solved = 1;
+      std::vector<std::pair<Edge*, U64>> provePath = traversePath;
       backpropagate(tree, currEdge->value, traversePath, 1, true, false, true);
+      proveAncestors(tree, provePath);
     }
     else{
       //Reached a leaf node
@@ -831,7 +940,10 @@ inline void search(chess::Board& rootBoard, timeManagement tm, Tree& tree){
         nnue.accumulator = currAccumulator;
         nnue.updateAccumulator(movedBoard, currEdge->edge);
 
-        currEdge->value = playout(tree, movedBoard, nnue);
+        //MCTS-Solver: mark edges leading to terminal positions as solved
+        bool isExact = false;
+        currEdge->value = playout(tree, movedBoard, nnue, &isExact);
+        if(isExact){currEdge->solved = 1;}
         assert(-1<=currEdge->value && 1>=currEdge->value);
         
         currBestValue = std::min(currBestValue, currEdge->value);
@@ -852,7 +964,10 @@ inline void search(chess::Board& rootBoard, timeManagement tm, Tree& tree){
       tree.root()->iters += 1;
 
       //Backpropagate best value
+      std::vector<std::pair<Edge*, U64>> provePath = traversePath;
       backpropagate(tree, -currBestValue, traversePath, visits, true, false, true);
+      //MCTS-Solver: try to prove the newly expanded node and its ancestors
+      proveAncestors(tree, provePath);
     }
 
     tree.seldepth = std::max(currDepth, int(tree.seldepth));
@@ -890,8 +1005,15 @@ inline void search(chess::Board& rootBoard, timeManagement tm, Tree& tree){
 
   //Output the final result of the search
   printSearchInfo(tree, start, true);
+  if(tree.root()->proven && Aurora::outputLevel.value >= 1){
+    std::cout << "info string root proven with value " << tree.root()->avgValue << std::endl;
+  }
   if(Aurora::outputLevel.value >= 0){
-    std::cout << "\nbestmove " << findBestAEdge(tree.root(), tree).edge.toStringRep() << std::endl; //std::endl to flush
+    //MCTS-Solver: if the root is proven, play the best proven move
+    //(for a proven win this is the fastest forced mate)
+    Edge bestEdge = tree.root()->proven ? findBestProvenEdge(tree.root())
+                                        : findBestAEdge(tree.root(), tree);
+    std::cout << "\nbestmove " << bestEdge.edge.toStringRep() << std::endl; //std::endl to flush
   }
 }
 

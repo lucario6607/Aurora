@@ -1,0 +1,25 @@
+# Aurora SPSA input for OpenBench — co-tuning the MCTS search constants for the 1024 net.
+# Paste the lines BELOW the header into OpenBench's "SPSA Parameters" box when creating the test.
+# Format:  name, type, value, min, max, c_end, r_end
+#
+# Notes:
+#  - type is "float": OpenBench sends these to the engine verbatim via setoption (no rounding).
+#  - value = current default from aurora.h. min/max are sane TUNING bounds (narrower than the
+#    engine's hard limits) to keep the SPSA walk well-conditioned.
+#  - c_end ~= final perturbation magnitude (set to ~10% of the start value here); r_end = learning
+#    rate at the last iteration. These are STARTING points — widen c_end if the walk looks stuck,
+#    shrink it if it's noisy. Budget ~20k-40k games for a set this size.
+#  - Excluded: time-management params (tune separately at a fixed net), and cpMultiplier
+#    (unused — the 1024/lc0 nets use the sigmoid cpToVal mapping, not the old atan path).
+#
+rootExplorationFactor, float, 0.026337, 0.001, 0.5, 0.0026, 0.002
+explorationFactor, float, 0.014091, 0.001, 0.5, 0.0014, 0.002
+valChangedMinWeight, float, 0.123489, 0.001, 1.0, 0.012, 0.002
+valSameMinWeight, float, 0.007526, 0.001, 1.0, 0.0015, 0.002
+varianceScaleMultiplier, float, 15.067323, 0.0, 60.0, 1.5, 0.002
+varianceScaleOffset, float, 0.006641, -0.5, 0.5, 0.005, 0.002
+varianceScaleMin, float, 1.001753, 0.0, 4.0, 0.1, 0.002
+varianceScaleMax, float, 1.913014, 0.0, 8.0, 0.19, 0.002
+visitWindow, float, 0.034869, 0.0, 1.0, 0.0035, 0.002
+visitBoostMultiplier, float, 1.117301, 0.0, 5.0, 0.11, 0.002
+visitBoostOffset, float, 0.000528, 0.0, 0.05, 0.0005, 0.002

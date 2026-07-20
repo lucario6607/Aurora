@@ -23,18 +23,35 @@ namespace evaluation{
 inline const int mg_value[6] = {42, 184, 207, 261, 642, 10000};
 inline const int eg_value[6] = {71, 242, 265, 538, 1067, 10000};
 
+//bullet-trained (lc0) nets output cp fitted to sigmoid(cp/EVALSCALE). The MCTS value mapping is
+//val = 2*sigmoid(cp/VALSCALE)-1. lc0's evals are ~2.5x sharper than andromeda-3's Aurora-self-play
+//eval, so VALSCALE is set ABOVE EVALSCALE to temper the value spread toward what Aurora's MCTS
+//constants (SPSA-tuned for andromeda-3) expect. Empirically VALSCALE 600 played best vs
+//andromeda-3 (400 baseline, 900+ worse). NOTE: andromeda-3 itself uses the OLD atan cpToVal, not
+//this — only bullet/lc0 nets use this sigmoid mapping. See training/TRAINING_LOG.md.
+#ifndef VALSCALE
+#define VALSCALE 600.0
+#endif
 inline float cpToVal(int cp){
-  return std::clamp(std::atan(cp/Aurora::cpMultiplier.value)/1.57079633, -1.0, 1.0);
+  return std::clamp(2.0/(1.0+std::exp(-cp/(VALSCALE)))-1.0, -1.0, 1.0);
 }
 
 inline int valToCp(float val){
-  return std::clamp(
-            std::round(std::tan(std::min(std::max(double(val), -0.9999), 0.9999)*1.57079633)*Aurora::cpMultiplier.value)
-        , -100000.0, 100000.0);
+  double v = std::min(std::max(double(val), -0.9999), 0.9999);
+  return std::clamp(std::round((VALSCALE)*std::log((1.0+v)/(1.0-v))), -100000.0, 100000.0);
 }
 
-//A simple 768->N*2->1 NNUE
-const int NNUEhiddenNeurons = 256;
+//A 768->N*2->1 perspective NNUE with `NNUEoutputBuckets` material-count output buckets.
+//Output bucket = (popCount(occupied) - 2) / ceil(32 / NNUEoutputBuckets), matching bullet's
+//MaterialCount<NNUEoutputBuckets>. With NNUEoutputBuckets==1 the bucket is always 0 and the
+//layout below is byte-identical to a single-bucket net (array<...,1> == scalar).
+//To use the bullet-trained net: set NNUEhiddenNeurons=512, NNUEoutputBuckets=8, and point the
+//INCBIN below at the new .nnue file, then rebuild.
+#ifndef NNUE_HIDDEN
+#define NNUE_HIDDEN 512
+#endif
+const int NNUEhiddenNeurons = NNUE_HIDDEN;
+const int NNUEoutputBuckets = 8;
 
 const int WeightsPerVec = sizeof(SIMD::Vec) / sizeof(int16_t);
 
@@ -44,12 +61,16 @@ template<int numHiddenNeurons>
 struct NNUEparameters{
     alignas(SIMD::Alignment) std::array<std::array<int16_t, numHiddenNeurons>, 768> hiddenLayerWeights;
     alignas(SIMD::Alignment) std::array<int16_t, numHiddenNeurons> hiddenLayerBiases;
-    alignas(SIMD::Alignment) std::array<int16_t, int(2*numHiddenNeurons)> outputLayerWeights;
-    int16_t outputLayerBias;
+    //Output buckets: [bucket][2*N], stm weights in [0,N), ntm weights in [N,2N). One bias per bucket.
+    alignas(SIMD::Alignment) std::array<std::array<int16_t, int(2*numHiddenNeurons)>, NNUEoutputBuckets> outputLayerWeights;
+    std::array<int16_t, NNUEoutputBuckets> outputLayerBias;
 };
 
+#ifndef NNUE_FILE
+#define NNUE_FILE "andromeda-clean-full.nnue"
+#endif
 extern "C" {
-  INCBIN(networkData, "andromeda-3.nnue");
+  INCBIN(networkData, NNUE_FILE);
 }
 
 inline const NNUEparameters<NNUEhiddenNeurons>* const nnueParameters = reinterpret_cast<
@@ -63,8 +84,10 @@ struct NNUE{
 
   NNUE(const NNUEparameters<numHiddenNeurons>* parameters) : parameters(parameters) {}
 
-  int evaluate(chess::Colors sideToMove){
+  int evaluate(chess::Colors sideToMove, int bucket = 0){
     //Adapted from Obsidian https://github.com/gab8192/Obsidian/blob/main/Obsidian/nnue.cpp
+    const int16_t* outputWeights = parameters->outputLayerWeights[bucket].data();
+
     SIMD::Vec stmAcc;
     SIMD::Vec oppAcc;
 
@@ -80,7 +103,7 @@ struct NNUE{
       v0 = SIMD::maxEpi16(stmAcc, vecZero); // clip
       v0 = SIMD::minEpi16(v0, vecQA); // clip
       v1 = SIMD::mulloEpi16(v0, SIMD::load( // multiply with output layer weights
-        reinterpret_cast<const SIMD::Vec *>(&parameters->outputLayerWeights[i * WeightsPerVec])));
+        reinterpret_cast<const SIMD::Vec *>(&outputWeights[i * WeightsPerVec])));
       v1 = SIMD::maddEpi16(v0, v1); // square
       sum = SIMD::addEpi32(sum, v1); // collect the result
 
@@ -89,13 +112,16 @@ struct NNUE{
       v0 = SIMD::maxEpi16(oppAcc, vecZero);
       v0 = SIMD::minEpi16(v0, vecQA);
       v1 = SIMD::mulloEpi16(v0,SIMD::load(
-        reinterpret_cast<const SIMD::Vec *>(&parameters->outputLayerWeights[numHiddenNeurons + i * WeightsPerVec])));
+        reinterpret_cast<const SIMD::Vec *>(&outputWeights[numHiddenNeurons + i * WeightsPerVec])));
       v1 = SIMD::maddEpi16(v0, v1);
       sum = SIMD::addEpi32(sum, v1);
     }
-    int unsquared = SIMD::vecHaddEpi32(sum) / 255 + parameters->outputLayerBias;
+    int unsquared = SIMD::vecHaddEpi32(sum) / 255 + parameters->outputLayerBias[bucket];
 
-    return (unsquared * 400) / (255 * 64) + 13;
+#ifndef EVALSCALE
+#define EVALSCALE 400
+#endif
+    return (unsquared * EVALSCALE) / (255 * 64);
   }
 
   void refreshAccumulator(chess::Board& board){
@@ -339,12 +365,22 @@ inline int mvvLva(chess::Board& board, chess::Move move){
          mg_value[sidedPieceToPiece[board.mailbox[0][move.getStartSquare()]]-1];
 }
 
+//Material-count output bucket, matching bullet's MaterialCount<NNUEoutputBuckets>.
+inline int outputBucket(const chess::Board& board){
+  constexpr int divisor = (32 + NNUEoutputBuckets - 1) / NNUEoutputBuckets; //ceil(32 / buckets)
+  int b = (popCount(board.occupied) - 2) / divisor;
+  return b < 0 ? 0 : (b >= NNUEoutputBuckets ? NNUEoutputBuckets - 1 : b);
+}
+
 template<int numHiddenNeurons>
-int qSearch(chess::Board& board, NNUE<numHiddenNeurons>& nnue, int alpha, int beta){
-  int eval = nnue.evaluate(board.sideToMove);
+int qSearch(chess::Board& board, NNUE<numHiddenNeurons>& nnue, int alpha, int beta, int depth = 0){
+  int eval = nnue.evaluate(board.sideToMove, outputBucket(board));
   int bestEval = eval;
 
   if(eval >= beta){return eval;}
+#ifdef QS_MAXDEPTH
+  if(depth >= QS_MAXDEPTH){return eval;}
+#endif
 
   if(eval > alpha){alpha = eval;}
 
@@ -369,7 +405,7 @@ int qSearch(chess::Board& board, NNUE<numHiddenNeurons>& nnue, int alpha, int be
     nnue.accumulator = currAccumulator;
     nnue.updateAccumulator(movedBoard, moves[i]);
 
-    eval = -qSearch(movedBoard, nnue, -beta, -alpha);
+    eval = -qSearch(movedBoard, nnue, -beta, -alpha, depth+1);
     
     if(eval > bestEval) bestEval = eval;
     if(eval > alpha) alpha = eval;
@@ -381,8 +417,12 @@ int qSearch(chess::Board& board, NNUE<numHiddenNeurons>& nnue, int alpha, int be
 
 template<int numHiddenNeurons>
 int evaluate(chess::Board& board, NNUE<numHiddenNeurons>& nnue){
+#ifdef NO_QSEARCH
+  return nnue.evaluate(board.sideToMove, outputBucket(board));
+#else
   int cpEvaluation = qSearch(board, nnue, -999999, 999999);
 
   return cpEvaluation;
+#endif
 }
 }

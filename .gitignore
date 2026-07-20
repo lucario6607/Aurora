@@ -26,3 +26,9 @@ auroraminidev.exe
 .clangd
 aurora
 auroradev
+
+# OpenBench setup: exclude the bullet trainer clone (637MB), built binaries, and
+# local fastchess tournament state
+training/
+*.exe
+config.json

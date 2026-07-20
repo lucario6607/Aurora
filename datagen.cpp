@@ -2,12 +2,13 @@
 #include <fstream>
 #include <iomanip>
 #include <thread>
+#include <random>
 
 int openingLength = 8;
 
 int infoPrintInterval = 10;
 
-int numberOfThreads = 8;
+int numberOfThreads = 20;
 
 float softmaxTemp = 0.2;
 
@@ -22,6 +23,7 @@ int main(){
   version += "-datagen";
 
   search::init();
+  Aurora::outputLevel.value = -1; //suppress per-move UCI info printing (big datagen speedup)
   //tb_init("C:\\Users\\kjlji\\OneDrive\\Documents\\VSCode\\C++\\AuroraChessEngine-main\\3-4-5");
 
   std::cout << "Aurora " << version << ", a chess engine by kjljixx\n";
@@ -113,14 +115,19 @@ int main(){
         //     break;
         //   }
         // }
-        if(chosenEdge.child != bestEdge.child){
+        if(chosenEdge.childIdx != bestEdge.childIdx){
           differChoices += 1;
           differValue += -(bestEdge.value - chosenEdge.value);
         }
         totalSearches += 1;
 
         if(board.squareUnderAttack(bitscanForward(board.getOurPieces(chess::KING)))==64 && board.mailbox[0][chosenEdge.edge.getEndSquare()]==0 && std::abs(bestEdge.value)<0.9999){
-          gameData.push_back(board.getFen() + " | " + std::to_string(int(round(tan((board.sideToMove ? search::findBestValue(root) : -search::findBestValue(root))*1.56375)*100))));
+          //White-relative search value in [-1,1] -> bullet-scale cp = 400*logit((v+1)/2),
+          //so sigmoid(cp/400) reproduces the win-prob target (matches evaluation.h sigmoid cpToVal).
+          float vWhite = board.sideToMove ? search::findBestValue(root) : -search::findBestValue(root);
+          double p = std::min(std::max((vWhite + 1.0) / 2.0, 1e-4), 1.0 - 1e-4);
+          int cpBullet = int(round(400.0 * log(p / (1.0 - p))));
+          gameData.push_back(board.getFen() + " | " + std::to_string(cpBullet));
           fenIter++;
         }
 
