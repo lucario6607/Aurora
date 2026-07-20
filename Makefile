@@ -1,5 +1,9 @@
 EXE := aurora
 BUILD_OPTIONS := -march=x86-64-v3 -O3 -std=c++17 -Wno-deprecated-declarations
+# ob-1024 is built only on the Windows OpenBench worker; force LLVM's linker so the
+# build doesn't depend on PATH ordering (MSYS2 make doesn't set OS=Windows_NT, so the
+# Windows block below is unreliable for this).
+BUILD_OPTIONS += -fuse-ld=lld
 
 # NNUE architecture width (hidden neurons). The net arch is compile-time, so a
 # branch that tunes the 1024 net must build with HIDDEN=1024.
