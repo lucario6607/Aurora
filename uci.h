@@ -70,7 +70,7 @@ inline void bench(){
 
     auto start = std::chrono::steady_clock::now();
 
-    search::search(board, search::timeManagement(search::ITERS, 10000), tree);
+    search::search(board, search::timeManagement(search::ITERS, 2000), tree);
 
     std::chrono::duration<float> elapsed = std::chrono::steady_clock::now() - start;
     totalElapsed += elapsed.count();
