@@ -48,7 +48,7 @@ inline int valToCp(float val){
 //To use the bullet-trained net: set NNUEhiddenNeurons=512, NNUEoutputBuckets=8, and point the
 //INCBIN below at the new .nnue file, then rebuild.
 #ifndef NNUE_HIDDEN
-#define NNUE_HIDDEN 512
+#define NNUE_HIDDEN 1024
 #endif
 const int NNUEhiddenNeurons = NNUE_HIDDEN;
 const int NNUEoutputBuckets = 8;
@@ -67,7 +67,7 @@ struct NNUEparameters{
 };
 
 #ifndef NNUE_FILE
-#define NNUE_FILE "andromeda-clean-full.nnue"
+#define NNUE_FILE "andromeda-1024.nnue"
 #endif
 extern "C" {
   INCBIN(networkData, NNUE_FILE);

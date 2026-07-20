@@ -3,7 +3,8 @@ BUILD_OPTIONS := -march=x86-64-v3 -O3 -std=c++17 -Wno-deprecated-declarations
 
 # NNUE architecture width (hidden neurons). The net arch is compile-time, so a
 # branch that tunes the 1024 net must build with HIDDEN=1024.
-HIDDEN := 512
+# ob-1024 branch: default to the 1024 net for OpenBench SPSA co-tuning.
+HIDDEN := 1024
 BUILD_OPTIONS += -DNNUE_HIDDEN=$(HIDDEN)
 
 # OpenBench supplies the network via `make EVALFILE=<path>`. When set, embed it
