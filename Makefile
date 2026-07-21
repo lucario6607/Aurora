@@ -5,6 +5,13 @@ BUILD_OPTIONS := -march=x86-64-v3 -O3 -std=c++17 -Wno-deprecated-declarations
 # Windows block below is unreliable for this).
 BUILD_OPTIONS += -fuse-ld=lld
 
+# CRITICAL for SPSA: the tunable search constants are declared hidden=true in aurora.h, so
+# respondUci() does NOT advertise them. fastchess only forwards `option.X=V` for options the
+# engine actually declares, so without -DDEV every SPSA parameter is silently DROPPED and the
+# tune measures two identical engines. -DDEV un-hides them (verified: 11 options advertised
+# vs 0 without). Does not change search behaviour; bench is identical.
+BUILD_OPTIONS += -DDEV
+
 # NNUE architecture width (hidden neurons). The net arch is compile-time, so a
 # branch that tunes the 1024 net must build with HIDDEN=1024.
 # ob-1024 branch: default to the 1024 net for OpenBench SPSA co-tuning.
