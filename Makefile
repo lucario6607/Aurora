@@ -1,5 +1,8 @@
 EXE := aurora
 BUILD_OPTIONS := -march=x86-64-v3 -O3 -std=c++17 -Wno-deprecated-declarations
+# Windows OpenBench worker: force LLVM's linker. MSYS2 make doesn't set OS=Windows_NT and its
+# coreutils link.exe shadows the real linker, failing with LNK1104. Only change from f55255d.
+BUILD_OPTIONS += -fuse-ld=lld
 
 ifneq ($(exe),)
     EXE := $(exe)
